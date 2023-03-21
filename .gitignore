@@ -1,6 +1,16 @@
 *.tmp
 .docx
-\formato\old
-ejemplos.py
-ejemplos2.py
-Graficos.py
+/formato/old
+/script/ejemplos.py
+/script/ejemplos2.py
+/script/Graficos.py
+Am prueba v2.docx
+Am prueba v3.docx
+Am prueba v4.docx
+Am_prueba.docx
+Am_prueba_2.docx
+Am_prueba_3.docx
+AM_v1.docx
+sp-plantilla-mi-info.docx
+/dataset
+/script/.pylint.d
