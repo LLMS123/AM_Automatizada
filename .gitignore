@@ -1,0 +1,6 @@
+*.tmp
+.docx
+\formato\old
+ejemplos.py
+ejemplos2.py
+Graficos.py
