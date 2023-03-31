@@ -14,6 +14,5 @@ AM_v1.docx
 sp-plantilla-mi-info.docx
 /dataset
 /script/.pylint.d
-/output/AM_*
 /output/Base_preliminar.xlsx
 .PDF
