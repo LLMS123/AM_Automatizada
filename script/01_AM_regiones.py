@@ -115,6 +115,7 @@ fecha_actual = datetime.today().strftime('%d-%m-%y')
 nyear_actual=datetime.today().year
 nmeses_actual=datetime.today().month #Rescato el número de mes que estamos hoy
 ndia_actual=datetime.today().day
+current_quarter = (nmeses_actual - 1) // 3 + 1
 
 ## A) Fecha disponibilidad
 fecha_corte_disponibilidad = "20230319"
@@ -127,10 +128,11 @@ nmes_disp_entero=int(nmes_disponibilidad)
 nmes_dispo=['enero', 'febrero', 'marzo', 'abril','mayo', 'junio','julio','agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
 ## B) Fecha Nexus
-fecha_corte_nexus = "20230301"
+fecha_corte_nexus = "20230330"
 nyear_nexus=fecha_corte_nexus[0:4]
 nmes_nexus=fecha_corte_nexus[4:6]
 ndia_nexus=fecha_corte_nexus[6:]
+fecha_corte_nexus_2=ndia_nexus + nmes_nexus + nyear_nexus
 fecha_corte_nexus_format=ndia_nexus + "/" + nmes_nexus + "/" + nyear_nexus
 
 nmes_nex_entero=int(nmes_nexus)
@@ -356,17 +358,49 @@ data_intervenciones_3=data_intervenciones_3[['region', 'cod_intervencion', 'inte
 ###############################
 # Base de nexus PEAS CAS  #
 ###############################
-data_cas_nexus = pd.read_excel(proyecto / f"dataset/bd_plazas_nexus/Anexos 1 CAS AIRSHP.xlsx", sheet_name='Anexo 1')   
+data_cas_nexus = pd.read_excel(proyecto / f"dataset/bd_plazas_nexus/ReporteNexusCas_IAP_{fecha_corte_nexus_2}.xlsx", sheet_name='Reporte_PEAS_2022')   
 data_cas_nexus = clean_names(data_cas_nexus) # Normalizamos nombres
 
 # Tabla a nivel de Pliego y UE:
-data_cas_nexus_1=data_cas_nexus[['cod_pliego','cod_ue','peas_programadas','costo_estimado_anual_de_la_contratacion_s_']].groupby(by=['cod_pliego','cod_ue'], as_index=False).sum()
+data_cas_nexus_1=data_cas_nexus[['cod_pliego','cod_ue','peas_programadas','contratado','costo_estimado_anual_de_la_contratacion_programado_s_']].groupby(by=['cod_pliego','cod_ue'], as_index=False).sum()
 data_cas=data_cas_nexus_1.merge(right=nombre_regiones,how="left", on='cod_pliego')
 data_cas=data_cas.merge(right=nombre_otros,how="left", on=['cod_pliego','cod_ue'])
-data_cas=data_cas.rename(columns={"costo_estimado_anual_de_la_contratacion_s_": "costo_anual"}) 
+data_cas=data_cas.rename(columns={"costo_estimado_anual_de_la_contratacion_programado_s_": "costo_anual"}) 
 
-# Tabla a nivel de Pliego y UE:
-#data_cas_nexus_1=data_cas_nexus[['','','','','']]
+# Tabla a nivel de Pliego y UE e intervención pedagógica:
+data_cas_nexus_2=data_cas_nexus[['cod_pliego','cod_ue','peas_programadas','contratado','cod_tipo_cargo','cargo','cod_int','intervencion_nombre_corto']].groupby(by=['cod_pliego','cod_ue','cod_int','intervencion_nombre_corto','cod_tipo_cargo','cargo'], as_index=False).sum()
+data_cas_2=data_cas_nexus_2.merge(right=nombre_regiones,how="left", on='cod_pliego')
+data_cas_2=data_cas_2.merge(right=nombre_otros,how="left", on=['cod_pliego','cod_ue'])
+#data_cas_2=data_cas_2.rename(columns={"costo_estimado_anual_de_la_contratacion_programado_s_": "costo_anual"}) 
+
+###############################
+# ANEXOS                      #
+###############################
+
+#Anexo 1:
+data_descrp_int = pd.read_excel(proyecto / f"dataset/bd_disponibilidad/Descripción intervenciones.xlsx", sheet_name='anexo_1') #,skiprows=0,  nrows=249, usecols = 'B:j') 
+data_descrp_int = data_descrp_int[['cod_intervencion','Descripción']]
+data_descrp_int=data_descrp_int.rename(columns={"cod_intervencion": "cod_int"}) 
+
+#CAS a nivel de interevención:
+data_cas_nexus_3=data_cas_nexus[['cod_pliego','peas_programadas','contratado','cod_int']].groupby(by=['cod_pliego','cod_int'], as_index=False).sum()
+
+#Disponibilidad a nivel de interevención:
+data_dispo = data_intervenciones[["region","cod_pliego","cod_intervencion","intervencion", "costo_upp_total"]]. \
+    groupby(by = ["region",'cod_pliego',"cod_intervencion", "intervencion"] , as_index=False).sum()
+
+data_dispo=data_dispo.rename(columns={"cod_intervencion": "cod_int"}) 
+
+#Merge bd y nexus
+data_anexo=data_dispo.merge(right=data_cas_nexus_3, how="left", on=['cod_pliego','cod_int'])
+data_anexo=data_anexo.merge(right=data_descrp_int, how="left", on=['cod_int'])
+
+data_anexo['costo_upp_total']=data_anexo['costo_upp_total'].fillna(0)
+data_anexo['peas_programadas']=data_anexo['peas_programadas'].fillna(0)
+
+#Anexo 2:
+data_cas_anexo2=data_cas_nexus[['cod_pliego','peas_programadas','contratado','cod_tipo_cargo','cargo','cod_int','intervencion_nombre_corto']].groupby(by=['cod_pliego','cod_int','intervencion_nombre_corto','cod_tipo_cargo','cargo'], as_index=False).sum()
+data_cas_anexo2=data_cas_anexo2.merge(right=nombre_regiones,how="left", on='cod_pliego')
 
 '''
 # Transferencias
@@ -1160,16 +1194,17 @@ for region in lista_regiones:
     tabla_intervenciones_formato_4 = tabla_intervenciones_formato_4.transform({k: v.format for k, v in formato_tabla_intervenciones.items()})
     
     ############################################
-    # Tablas para Contratacion CAS Personal
+    # Tablas para Contratacion CAS Personal - parte 1
     ############################################
     # Generamos los indicadores de PIM y ejecución de intervenciones
     region_seleccionada = data_cas['region'] == region #Seleccionar region
     tabla_intervenciones = data_cas[region_seleccionada]   
     total_peas_region = str('{:,.0f}'.format(tabla_intervenciones["peas_programadas"].sum()))
+    total_peas_contra_region = str('{:,.0f}'.format(tabla_intervenciones["contratado"].sum()))
     cant_ue_region = str('{:,.0f}'.format(tabla_intervenciones["cod_ue"].count()))
     costo_anual_region = str('{:,.2f}'.format(tabla_intervenciones["costo_anual"].sum()/1000000))
     #costo_intervenciones_region = str('{:,.0f}'.format(tabla_intervenciones["costo_upp_total"].sum()))
-    #porcentaje_ejecucion = str('{:,.1%}'.format(tabla_intervenciones["devengado"].sum()/tabla_intervenciones["pim"].sum())  if tabla_intervenciones["devengado"].sum()/tabla_intervenciones["pim"].sum()>0 else 0)
+    porcentaje_ejecucion = str('{:,.1%}'.format(tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum())  if tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum()>0 else 0)
     
     #porcentaje_costomesactual = str('{:,.1%}'.format(tabla_intervenciones[f"devengado_reporte_siaf_{fecha_corte_disponibilidad}"].sum()/tabla_intervenciones["costo_actual"].sum()))
     #transferencia_region_2021 = str('{:,.0f}'.format(tabla_intervenciones["transferencia"].sum()))
@@ -1210,11 +1245,246 @@ for region in lista_regiones:
     
     tabla_intervenciones_formato_6 = tabla_intervenciones_formato_6.transform({k: v.format for k, v in formato_tabla_intervenciones.items()})
     
+    ##################################################################
+    # Tablas para Contratacion CAS Personal - PERSONAL ADMINISTRATIVO
+    ##################################################################
+    # Generamos los indicadores de PIM y ejecución de intervenciones
+    region_seleccionada = data_cas_2['region'] == region #Seleccionar region
+    tabla_intervenciones = data_cas_2[region_seleccionada]   
+    tabla_intervenciones=tabla_intervenciones.loc[tabla_intervenciones['cod_tipo_cargo']=='TC_001']  # Para personal administrativo
+    total_peas_p = str('{:,.0f}'.format(tabla_intervenciones["peas_programadas"].sum()))
+    total_peas_c = str('{:,.0f}'.format(tabla_intervenciones["contratado"].sum()))
+    #cant_ue_region = str('{:,.0f}'.format(tabla_intervenciones["cod_ue"].count()))
+    #costo_anual_region = str('{:,.2f}'.format(tabla_intervenciones["costo_anual"].sum()/1000000))
+    #costo_intervenciones_region = str('{:,.0f}'.format(tabla_intervenciones["costo_upp_total"].sum()))
+    ejec_p= str('{:,.1%}'.format(tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum())  if tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum()>0 else 0)
+    
+    # TOTAL
+    tabla_intervenciones_formato_7 = tabla_intervenciones #data_cas_2[region_seleccionada]
+    tabla_intervenciones_formato_7['ejecucion']=tabla_intervenciones_formato_7["contratado"]/tabla_intervenciones_formato_7["peas_programadas"]
+    #tabla_intervenciones_formato=tabla_intervenciones_formato[[ 'region','nom_ue','costo_upp_total','pia', 'pim', 'devengado', 'transferencia_t']]
+    
+    # Generamos porcentaje de avance
+    #porcentaje_ejecucion_a = tabla_intervenciones_formato_7["contratado"].sum()/tabla_intervenciones_formato_7["peas_programadas"].sum()
+
+    # Generamos fila total
+    total_int = tabla_intervenciones_formato_7.groupby(by = ["region"], as_index=False).sum()
+    
+    # Realizamos append del total en la tabla
+    tabla_intervenciones_formato_7 = tabla_intervenciones_formato_7.append(total_int, ignore_index=True)
+    
+    #para corregir ultimo valor de la columna ejecución
+    ejec_1=tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum()  if tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum()>0 else 0
+    
+    # Reemplazamos % de avance correctos en fila total
+    tabla_intervenciones_formato_7['ejecucion'] = tabla_intervenciones_formato_7['ejecucion'].fillna("0").astype(float)
+    tabla_intervenciones_formato_7['ejecucion'] = tabla_intervenciones_formato_7['ejecucion'].replace(np.inf, 0)
+    tabla_intervenciones_formato_7.iloc[-1, tabla_intervenciones_formato_7.columns.get_loc('ejecucion')] = ejec_1
+    tabla_intervenciones_formato_7=tabla_intervenciones_formato_7[['region','intervencion_nombre_corto','cargo','peas_programadas','contratado','ejecucion']]
+    
+    #Incluimos palabra "total" y "-" en vez de NaN
+    tabla_intervenciones_formato_7['intervencion_nombre_corto'] = tabla_intervenciones_formato_7['intervencion_nombre_corto'].fillna("Total")
+    tabla_intervenciones_formato_7['cargo'] = tabla_intervenciones_formato_7['cargo'].fillna("")
+    
+    #tabla_intervenciones_formato_7['ejecucion'] = tabla_intervenciones_formato_7['ejecucion'].fillna("0").astype(float)
+    
+    # Formato para la tabla
+    formato_tabla_intervenciones = {
+    "intervencion_nombre_corto" : "{}",
+    "cargo" : "{}",
+    "peas_programadas" : "{:,.0f}",
+    "contratado": "{:,.0f}",
+    "ejecucion": "{:,.1%}"
+    #    "costo_actual": "{:,.0f}",
+    #    "ejecucion": "{:,.1%}",
+    }
+    
+    tabla_intervenciones_formato_7 = tabla_intervenciones_formato_7.transform({k: v.format for k, v in formato_tabla_intervenciones.items()})
+    
+    ########################################################################################
+    # Tablas para Contratacion CAS Personal - PERSONAL CAS DE BIENESTAR SOCIOEMOCIONAL
+    ########################################################################################
+    # Generamos los indicadores de PIM y ejecución de intervenciones
+    region_seleccionada = data_cas_2['region'] == region #Seleccionar region
+    tabla_intervenciones = data_cas_2[region_seleccionada]   
+    tabla_intervenciones=tabla_intervenciones.loc[tabla_intervenciones['cod_tipo_cargo']=='TC_002']  # Para personal administrativo
+    total_peas_p = str('{:,.0f}'.format(tabla_intervenciones["peas_programadas"].sum()))
+    total_peas_c = str('{:,.0f}'.format(tabla_intervenciones["contratado"].sum()))
+    #cant_ue_region = str('{:,.0f}'.format(tabla_intervenciones["cod_ue"].count()))
+    #costo_anual_region = str('{:,.2f}'.format(tabla_intervenciones["costo_anual"].sum()/1000000))
+    #costo_intervenciones_region = str('{:,.0f}'.format(tabla_intervenciones["costo_upp_total"].sum()))
+    ejec_p= str('{:,.1%}'.format(tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum())  if tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum()>0 else 0)
+    
+    # TOTAL
+    tabla_intervenciones_formato_8 = tabla_intervenciones #data_cas_2[region_seleccionada]
+    tabla_intervenciones_formato_8['ejecucion']=tabla_intervenciones_formato_8["contratado"]/tabla_intervenciones_formato_8["peas_programadas"]
+    #tabla_intervenciones_formato=tabla_intervenciones_formato[[ 'region','nom_ue','costo_upp_total','pia', 'pim', 'devengado', 'transferencia_t']]
+    
+    # Generamos porcentaje de avance
+    #porcentaje_ejecucion_a = tabla_intervenciones_formato_7["contratado"].sum()/tabla_intervenciones_formato_7["peas_programadas"].sum()
+
+    # Generamos fila total
+    total_int = tabla_intervenciones_formato_8.groupby(by = ["region"], as_index=False).sum()
+    
+    # Realizamos append del total en la tabla
+    tabla_intervenciones_formato_8 = tabla_intervenciones_formato_8.append(total_int, ignore_index=True)
+    
+    #para corregir ultimo valor de la columna ejecución
+    ejec_1=tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum()  if tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum()>0 else 0
+    
+    # Reemplazamos % de avance correctos en fila total
+    tabla_intervenciones_formato_8['ejecucion'] = tabla_intervenciones_formato_8['ejecucion'].fillna("0").astype(float)
+    tabla_intervenciones_formato_8['ejecucion'] = tabla_intervenciones_formato_8['ejecucion'].replace(np.inf, 0)
+    tabla_intervenciones_formato_8.iloc[-1, tabla_intervenciones_formato_8.columns.get_loc('ejecucion')] = ejec_1
+    tabla_intervenciones_formato_8=tabla_intervenciones_formato_8[['region','intervencion_nombre_corto','cargo','peas_programadas','contratado','ejecucion']]
+    
+    #Incluimos palabra "total" y "-" en vez de NaN
+    tabla_intervenciones_formato_8['intervencion_nombre_corto'] = tabla_intervenciones_formato_8['intervencion_nombre_corto'].fillna("Total")
+    tabla_intervenciones_formato_8['cargo'] = tabla_intervenciones_formato_8['cargo'].fillna("")
+    #tabla_intervenciones_formato_7['ejecucion'] = tabla_intervenciones_formato_7['ejecucion'].fillna("0").astype(float)
+    
+    # Formato para la tabla
+    formato_tabla_intervenciones = {
+    "intervencion_nombre_corto" : "{}",
+    "cargo" : "{}",
+    "peas_programadas" : "{:,.0f}",
+    "contratado": "{:,.0f}",
+    "ejecucion": "{:,.1%}"
+    #    "costo_actual": "{:,.0f}",
+    #    "ejecucion": "{:,.1%}",
+    }
+    
+    tabla_intervenciones_formato_8 = tabla_intervenciones_formato_8.transform({k: v.format for k, v in formato_tabla_intervenciones.items()})
+    
+    ################################################################################
+    # Tablas para Contratacion CAS Personal - OTROS PERFILES CAS DE INTERVENCIONES
+    ################################################################################
+    # Generamos los indicadores de PIM y ejecución de intervenciones
+    region_seleccionada = data_cas_2['region'] == region #Seleccionar region
+    tabla_intervenciones = data_cas_2[region_seleccionada]   
+    tabla_intervenciones=tabla_intervenciones.loc[tabla_intervenciones['cod_tipo_cargo']=='TC_003']  # Para personal administrativo
+    ejec_perfil=tabla_intervenciones.copy()
+    ejec_perfil = ejec_perfil[['region', 'intervencion_nombre_corto','peas_programadas','contratado']].groupby(by = ["region", 'intervencion_nombre_corto'], as_index=False).sum()
+    
+    tabla_intervenciones = tabla_intervenciones[['region', 'cargo','peas_programadas','contratado']].groupby(by = ["region", 'cargo'], as_index=False).sum()
+    ejec_p=tabla_intervenciones.copy()
+    total_peas_pro = str('{:,.0f}'.format(tabla_intervenciones["peas_programadas"].sum()))
+    total_peas_contr = str('{:,.0f}'.format(tabla_intervenciones["contratado"].sum()))
+    #cant_ue_region = str('{:,.0f}'.format(tabla_intervenciones["cod_ue"].count()))
+    #costo_anual_region = str('{:,.2f}'.format(tabla_intervenciones["costo_anual"].sum()/1000000))
+    #costo_intervenciones_region = str('{:,.0f}'.format(tabla_intervenciones["costo_upp_total"].sum()))
+    ejec_otros= str('{:,.1%}'.format(tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum())  if tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum()>0 else 0)
+    
+    ejec_p['ejecucion']= tabla_intervenciones["contratado"]/tabla_intervenciones["peas_programadas"] 
+    ejec_p['ejecucion'] = ejec_p['ejecucion'].replace(np.inf, 0)
+    ejec_p['ejecucion'] = ejec_p['ejecucion'].fillna(0)
+    
+    ejec_p['id_inter']=0
+    ejec_p.loc[ejec_p['ejecucion']>0.7,'id_inter']=1
+    ejec_p.loc[ejec_p['ejecucion']==0,'id_inter']=2
+    
+    #lista de intervenciones con contratación superior a 70%
+    cargos_70=ejec_p.loc[ejec_p['id_inter']==1]
+    cargos_70 = ejec_p['cargo'].tolist()
+    
+    #lista de intervenciones con contratación 0%   
+    cargos_0=ejec_p.loc[ejec_p['id_inter']==2]
+    cargos_0 = ejec_p['cargo'].tolist()
+
+    tabla_intervenciones_gr_cas=ejec_perfil
+    tabla_intervenciones_gr_cas['ejecucion']= tabla_intervenciones_gr_cas["contratado"]/tabla_intervenciones_gr_cas["peas_programadas"] 
+    tabla_intervenciones_gr_cas['ejecucion'] = tabla_intervenciones_gr_cas['ejecucion'].replace(np.inf, 0)
+    tabla_intervenciones_gr_cas['ejecucion'] = tabla_intervenciones_gr_cas['ejecucion'].fillna(0)
+
     '''
     # Generamos el ID para la transferencia
     id_transferencia_intv = str('{:,.0f}'.format(tabla_intervenciones["id_transferencia_int"].sum()))
     id_n_transf= str(n_transf)
     '''
+    
+    ################################################################################
+    # Tablas Anexo 1
+    ################################################################################
+    # Generamos los indicadores de PIM y ejecución de intervenciones
+    region_seleccionada = data_anexo['region'] == region #Seleccionar region
+    tabla_intervenciones = data_anexo[region_seleccionada]   
+
+    # TOTAL
+    tabla_intervenciones_formato_9 = tabla_intervenciones #data_cas_2[region_seleccionada]
+
+    # Generamos fila total
+    total_int = tabla_intervenciones_formato_9.groupby(by = ["region"], as_index=False).sum()
+    
+    # Realizamos append del total en la tabla
+    tabla_intervenciones_formato_9 = tabla_intervenciones_formato_9.append(total_int, ignore_index=True)
+    
+    # Reemplazamos % de avance correctos en fila total
+    tabla_intervenciones_formato_9['costo_upp_total'] = tabla_intervenciones_formato_9['costo_upp_total'].fillna("0").astype(float)
+    tabla_intervenciones_formato_9['peas_programadas'] = tabla_intervenciones_formato_9['peas_programadas'].fillna("0").astype(float)
+    #Incluimos palabra "total" y "-" en vez de NaN
+    tabla_intervenciones_formato_9['intervencion'] = tabla_intervenciones_formato_9['intervencion'].fillna("Total")
+    tabla_intervenciones_formato_9['Descripción'] = tabla_intervenciones_formato_9['Descripción'].fillna("")
+    #tabla_intervenciones_formato_7['ejecucion'] = tabla_intervenciones_formato_7['ejecucion'].fillna("0").astype(float)
+    
+    # Formato para la tabla
+    formato_tabla_intervenciones = {
+    "intervencion" : "{}",
+    "Descripción" : "{}",
+    "peas_programadas" : "{:,.0f}",
+    "costo_upp_total": "{:,.0f}"
+    #"ejecucion": "{:,.1%}"
+    #    "costo_actual": "{:,.0f}",
+    #    "ejecucion": "{:,.1%}",
+    }
+    
+    tabla_intervenciones_formato_9 = tabla_intervenciones_formato_9.transform({k: v.format for k, v in formato_tabla_intervenciones.items()})
+
+    ################################################################################
+    # Tablas Anexo 2
+    ################################################################################
+    # Generamos los indicadores de PIM y ejecución de intervenciones
+    region_seleccionada = data_cas_anexo2['region'] == region #Seleccionar region
+    tabla_intervenciones = data_cas_anexo2[region_seleccionada]   
+   
+    #Ejecución
+    tabla_intervenciones['ejecucion']= tabla_intervenciones["contratado"]/tabla_intervenciones["peas_programadas"] 
+    tabla_intervenciones['ejecucion'] = tabla_intervenciones['ejecucion'].replace(np.inf, 0)
+    tabla_intervenciones['ejecucion'] = tabla_intervenciones['ejecucion'].fillna(0)
+    
+    ejec_2=tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum()  if tabla_intervenciones["contratado"].sum()/tabla_intervenciones["peas_programadas"].sum()>0 else 0
+    
+    # TOTAL
+    tabla_intervenciones_formato_10 = tabla_intervenciones #data_cas_2[region_seleccionada]
+    tabla_intervenciones_formato_10 = tabla_intervenciones.sort_values(by=['intervencion_nombre_corto'])
+
+    # Generamos fila total
+    total_int = tabla_intervenciones_formato_10.groupby(by = ["region"], as_index=False).sum()
+    
+    # Realizamos append del total en la tabla
+    tabla_intervenciones_formato_10 = tabla_intervenciones_formato_10.append(total_int, ignore_index=True)
+    
+    # Reemplazamos % de avance correctos en fila total
+    #tabla_intervenciones_formato_10['costo_upp_total'] = tabla_intervenciones_formato_9['costo_upp_total'].fillna("0").astype(float)
+    tabla_intervenciones_formato_10['peas_programadas'] = tabla_intervenciones_formato_10['peas_programadas'].fillna("0").astype(float)
+    tabla_intervenciones_formato_10.iloc[-1, tabla_intervenciones_formato_10.columns.get_loc('ejecucion')] = ejec_2
+    #Incluimos palabra "total" y "-" en vez de NaN
+    tabla_intervenciones_formato_10['intervencion_nombre_corto'] = tabla_intervenciones_formato_10['intervencion_nombre_corto'].fillna("Total")
+    tabla_intervenciones_formato_10['cargo'] = tabla_intervenciones_formato_10['cargo'].fillna("")
+    #tabla_intervenciones_formato_7['ejecucion'] = tabla_intervenciones_formato_7['ejecucion'].fillna("0").astype(float)
+    
+    # Formato para la tabla
+    formato_tabla_intervenciones = {
+    "intervencion_nombre_corto" : "{}",
+    "cargo" : "{}",
+    "peas_programadas" : "{:,.0f}",
+    "contratado": "{:,.0f}",
+    "ejecucion": "{:,.1%}"
+    #    "costo_actual": "{:,.0f}",
+    #    "ejecucion": "{:,.1%}",
+    }
+    
+    tabla_intervenciones_formato_10 = tabla_intervenciones_formato_10.transform({k: v.format for k, v in formato_tabla_intervenciones.items()})
+
     ############################################
     # Tablas e indicadores mascarillas #
     ############################################
@@ -1367,10 +1637,52 @@ for region in lista_regiones:
     df_collaps['ejecucion'] = (df_collaps["devengado"]/df_collaps["pim"])*100
     df_collaps.replace([np.inf, -np.inf], np.nan, inplace=True)
     df_collaps.loc[df_collaps["ejecucion"].isnull(), 'ejecucion']=0
-        
+    
+    df_g2=df_collaps["devengado"].sum()/df_collaps["pim"].sum() if df_collaps["devengado"].sum()/df_collaps["pim"].sum()>0 else 0
+
     df_sorted = df_collaps.sort_values('ejecucion', ascending=False)
     #plt.barh(df_sorted["nom_ue"], df_sorted["ejecucion"],color=['#C00000'])
     
+    #Distinbguiendo los colores de las barras de acuerdo al grado de ejecución      
+    if current_quarter==1:
+        colors = []
+        for ejec in df_sorted['ejecucion']:
+            if ejec / 100 <= 0.1:
+                colors.append('#C00000')  # rojo
+            elif ejec / 100 <= 0.17:
+                colors.append('#FFFF00')  # amarillo
+            else:
+                colors.append('#00B050')  # verde
+    elif current_quarter==2:
+        colors = []
+        for ejec in df_sorted['ejecucion']:
+            if ejec / 100 <= 0.2:
+                colors.append('#C00000')  # rojo
+            elif ejec / 100 <= 0.4:
+                colors.append('#FFFF00')  # amarillo
+            else:
+                colors.append('#00B050')  # verde
+            
+    elif current_quarter==3:
+        colors = []
+        for ejec in df_sorted['ejecucion']:
+            if ejec / 100 <= 0.3:
+                colors.append('#C00000')  # rojo
+            elif ejec / 100 <= 0.5:
+                colors.append('#FFFF00')  # amarillo
+            else:
+                colors.append('#00B050')  # verde
+                    
+    else:
+        colors = []
+        for ejec in df_sorted['ejecucion']:
+            if ejec / 100 <= 0.4:
+                colors.append('#C00000')  # rojo
+            elif ejec / 100 <= 0.7:
+                colors.append('#FFFF00')  # amarillo
+            else:
+                colors.append('#00B050')  # verde
+
     fig, ax = plt.subplots()
     ax.barh(df_sorted['nom_ue'], df_sorted['ejecucion'], color=['#C00000'])
         
@@ -1392,6 +1704,52 @@ for region in lista_regiones:
         spine.set_visible(False)
   
     plt.savefig(path_grafico / "Gráfico_1.png", bbox_inches="tight")
+    #plt.savefig("Gráfico_1.png") # guardamos el gráfico para cargarlo en el word
+    plt.show()
+   
+    ##################################################################################
+    # Gráfico 2: Avance de contratación CAS de otras plazas
+    ##################################################################################
+    df_collaps=tabla_intervenciones_gr_cas  #[['intervencion_nombre_corto','peas_programadas','contratado']].groupby(by="intervencion_nombre_corto", as_index=False).sum()
+    df_collaps['ejecucion'] = (df_collaps["contratado"]/df_collaps["peas_programadas"])*100 #if df_collaps["contratado"]/df_collaps["peas_programadas"]>0 else 0
+    #df_collaps.replace([np.inf, -np.inf], np.nan, inplace=True)
+    #df_collaps.loc[df_collaps["ejecucion"].isnull(), 'ejecucion']=0
+    
+    df_g2=df_collaps["contratado"].sum()/df_collaps["peas_programadas"].sum()
+    
+    df_sorted = df_collaps.sort_values('ejecucion', ascending=False)
+    #plt.barh(df_sorted["nom_ue"], df_sorted["ejecucion"],color=['#C00000'])
+        
+    colors = []
+    for ejec in df_sorted['ejecucion']:
+        if ejec / 100 <= 0.4:
+            colors.append('#C00000')  # rojo
+        elif ejec / 100 <= 0.7:
+            colors.append('#FFFF00')  # amarillo
+        else:
+            colors.append('#00B050')  # verde
+ 
+    fig, ax = plt.subplots()
+    ax.barh(df_sorted['intervencion_nombre_corto'], df_sorted['ejecucion'], color=colors)
+      
+    # Configurar el formato del eje x
+    fmt = '%.0f%%'
+    xticks = mtick.FormatStrFormatter(fmt)
+    plt.gca().xaxis.set_major_formatter(xticks)
+    
+    for i, v in enumerate(df_sorted['ejecucion']):
+        plt.text(v + 0.1, i - 0.1, '{:.1f}%'.format(v), color='black', fontsize=9, fontweight='normal', fontstyle='normal', fontfamily='Arial(Cuerpo)')
+    
+    #plt.axvline(x=31357871, color='blue', linestyle='--', linewidth=1)
+    #plt.axvline(x=31367871, color='green', linestyle='--', linewidth=1)
+    
+    plt.grid(axis='x', color='gray', linestyle=':', linewidth=1, zorder=-10)
+    #plt.tight_layout()
+    
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+  
+    plt.savefig(path_grafico / "Gráfico_2.png", bbox_inches="tight")
     #plt.savefig("Gráfico_1.png") # guardamos el gráfico para cargarlo en el word
     plt.show()
     
@@ -1705,7 +2063,7 @@ en base a los resultados de la ejecución de los recursos asignados, conforme lo
     ########################################    
     int_titulo = document.add_paragraph()
     int_titulo.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
-    int_titulo_negrita = int_titulo.add_run(f"Tabla N° 04 Avance en Ejecución Presupuestal a nivel de intervenciones pedagógicas (expresados en miles de soles)")
+    int_titulo_negrita = int_titulo.add_run(f"Tabla N° 04 Avance en Ejecución Presupuestal a nivel de intervenciones pedagógicas")
     #int_titulo_negrita.style = document.styles['List Bullet']
     #int_titulo_negrita.style = document.styles['List Bullet']
     int_titulo_negrita.bold = True    
@@ -1783,6 +2141,307 @@ en base a los resultados de la ejecución de los recursos asignados, conforme lo
     interv_parrafo3.style.font.italic = True
     #interv_parrafo3.style.font.size = docx.shared.Pt(9)
     
+    interv_parrafo2 = document.add_paragraph(f"A la fecha de corte del {ndia_nexus} de {nmes_nex[nmes_nex_entero-1]} del 2023, la Región {region}\
+ ha contratado {total_peas_contra_region} PEAS CAS de las {total_peas_region} PEAS confirmadas, lo que representa un avance de contratación de {porcentaje_ejecucion}.", style='List Bullet')
+    interv_parrafo2.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY  
+    
+    interv_parrafo2 = document.add_paragraph(f"A continuación, se detallarán los perfiles CAS de las intervenciones y acciones pedagógicas\
+, en función a 3 diferentes tipos:", style='List Bullet')
+    interv_parrafo2.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY
+    
+    interv_parrafo2 = document.add_paragraph(f"Personal CAS Administrativo", style='List Number 2')
+    interv_parrafo2 = document.add_paragraph(f"Personal CAS de Bienestar Social", style='List Number 2')
+    interv_parrafo2 = document.add_paragraph(f"Otros perfiles CAS", style='List Number 2')
+
+    interv_parrafo2.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY
+    #document.add_paragraph('\n')
+
+    #######################################
+    # Tabla 6 : Avance de contratación del Personal Administrativo 
+    ########################################
+    #document.add_page_break()
+    document.add_heading("PERSONAL ADMINISTRATIVO", level=2) # 1) Intervenciones pedagógicas  
+    #document.add_heading(f"Corte: {fecha_corte_disponibilidad_format}", level=3)
+    
+    interv_parrafo2 = document.add_paragraph("La Tabla N° 06 muestra el avance de ejecución de los perfiles correspondientes al\
+ personal administrativo, en el marco de las intervenciones y acciones pedagógicas.", style='List Bullet')
+    interv_parrafo2.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY
+    
+    # Tabla
+    int_titulo = document.add_paragraph()
+    int_titulo.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    int_titulo_negrita = int_titulo.add_run(f"Tabla N° 06 Avance de contratación del Personal Administrativo")
+    #int_titulo_negrita.style = document.styles['List Bullet']
+    #int_titulo_negrita.style = document.styles['List Bullet']
+    int_titulo_negrita.bold = True    
+    tabla1_interv = document.add_table(tabla_intervenciones_formato_7.shape[0]+1, tabla_intervenciones_formato_7.shape[1])
+    tabla1_interv.autofit = False
+    tabla1_interv.allow_autofit = True
+    tabla1_interv.style = "tabla_minedu_1"
+    #tabla1_interv.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    tabla1_interv.alignment = WD_TABLE_ALIGNMENT.CENTER
+    
+    row = tabla1_interv.rows[0].cells
+    row[0].text = "Intervención Pedagógica"
+    row[1].text = "Perfil"
+    row[2].text = "PEAS programadas"
+    row[3].text = "PEAS  contratadas"
+    row[4].text = "% Avance Contratación"
+    #row[5].text = "COSTO AL MES"
+    #row[4].text = "% DEV COSTO AL MES"
+    ## Contenido de la tabla
+    for i in range(tabla_intervenciones_formato_7.shape[0]):
+        for j in range(tabla_intervenciones_formato_7.shape[-1]):
+            tabla1_interv.cell(i+1,j).text = str(tabla_intervenciones_formato_7.values[i,j])  
+    
+    last_row = tabla1_interv.rows[-1]
+    first_cell = last_row.cells[0] # selecciona la primera celda de la última fila
+    second_cell = last_row.cells[1] # selecciona la segunda celda de la última fila
+    second_cell.text = second_cell.text.strip()
+
+    first_cell.merge(second_cell)
+    merged_cell = last_row.cells[0] # selecciona la celda combinada
+    #merged_cell.text = "Total"
+
+    for paragraph in merged_cell.paragraphs:
+        paragraph.alignment = 1
+
+    #Fuente:
+    interv_parrafo3 = document.add_paragraph(f"Fuente: Módulo CAS del Sistema Nexus al corte de {ndia_nexus} de {nmes_nex[nmes_nex_entero-1]} del 2023")
+    interv_parrafo3.style = fuente_stilo
+    interv_parrafo3.style.font.italic = True
+    #interv_parrafo3.style.font.size = docx.shared.Pt(9)
+    
+    #####################################################################################
+    # Tabla 7 : Avance de contratación de Personal de bienestar socioemocional
+    ######################################################################################
+    #document.add_page_break()
+    document.add_heading("PERSONAL CAS DE BIENESTAR SOCIOEMOCIONAL", level=2) # 1) Intervenciones pedagógicas  
+    #document.add_heading(f"Corte: {fecha_corte_disponibilidad_format}", level=3)
+    
+    interv_parrafo2 = document.add_paragraph("La Tabla N° 07 muestra el avance de ejecución por perfil del personal de bienestar socioemocional, en el marco\
+ de las intervenciones y acciones pedagógicas. ", style='List Bullet')
+    interv_parrafo2.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY
+    
+    # Tabla
+    int_titulo = document.add_paragraph()
+    int_titulo.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    int_titulo_negrita = int_titulo.add_run(f"Tabla N° 07 Avance de contratación de Personal de bienestar socioemocional")
+    #int_titulo_negrita.style = document.styles['List Bullet']
+    #int_titulo_negrita.style = document.styles['List Bullet']
+    int_titulo_negrita.bold = True    
+    tabla1_interv = document.add_table(tabla_intervenciones_formato_8.shape[0]+1, tabla_intervenciones_formato_8.shape[1])
+    tabla1_interv.autofit = False
+    tabla1_interv.allow_autofit = True
+    tabla1_interv.style = "tabla_minedu_1"
+    #tabla1_interv.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    tabla1_interv.alignment = WD_TABLE_ALIGNMENT.CENTER
+    
+    row = tabla1_interv.rows[0].cells
+    row[0].text = "Intervención Pedagógica"
+    row[1].text = "Perfil"
+    row[2].text = "PEAS programadas"
+    row[3].text = "PEAS  contratadas"
+    row[4].text = "% Avance Contratación"
+    #row[5].text = "COSTO AL MES"
+    #row[4].text = "% DEV COSTO AL MES"
+    ## Contenido de la tabla
+    for i in range(tabla_intervenciones_formato_8.shape[0]):
+        for j in range(tabla_intervenciones_formato_8.shape[-1]):
+            tabla1_interv.cell(i+1,j).text = str(tabla_intervenciones_formato_8.values[i,j])  
+    
+    last_row = tabla1_interv.rows[-1]
+    first_cell = last_row.cells[0] # selecciona la primera celda de la última fila
+    second_cell = last_row.cells[1] # selecciona la segunda celda de la última fila
+    second_cell.text = second_cell.text.strip()
+
+    first_cell.merge(second_cell)
+    merged_cell = last_row.cells[0] # selecciona la celda combinada
+    #merged_cell.text = "Total"
+
+    for paragraph in merged_cell.paragraphs:
+        paragraph.alignment = 1
+
+    #Fuente:
+    interv_parrafo3 = document.add_paragraph(f"Fuente: Módulo CAS del Sistema Nexus al corte de {ndia_nexus} de {nmes_nex[nmes_nex_entero-1]} del 2023")
+    interv_parrafo3.style = fuente_stilo
+    interv_parrafo3.style.font.italic = True
+    #interv_parrafo3.style.font.size = docx.shared.Pt(9)
+    
+    #######################################################################################################################
+    # Gráfico N° 02. Avance en la contratación de plazas para  intervenciones y acciones pedagógicas- Otras plazas(*)
+    ########################################################################################################################
+    #document.add_page_break()
+    document.add_heading("OTROS PERFILES CAS DE INTERVENCIONES", level=2) # 1) Intervenciones pedagógicas  
+    #document.add_heading(f"Corte: {fecha_corte_disponibilidad_format}", level=3)
+  
+    interv_parrafo2 = document.add_paragraph("Los perfiles CAS con % superior al 70% de contracción en sus perfiles CAS, son:", style='List Bullet')
+    interv_parrafo2.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY
+    
+    for i in range(len(cargos_70)):
+        interv_parrafo2 = document.add_paragraph(f"{cargos_70[i]}", style='List Bullet 2')
+        interv_parrafo2.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY
+    
+    interv_parrafo2 = document.add_paragraph("Mientras que los perfiles CAS, que a la fecha no han logrado ser contratados son:", style='List Bullet')
+    interv_parrafo2.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY
+    
+    for i in range(len(cargos_0)):
+        interv_parrafo2 = document.add_paragraph(f"{cargos_0[i]}", style='List Bullet 2')
+        interv_parrafo2.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY
+    
+    interv_parrafo2 = document.add_paragraph(f"Los demás perfiles CAS de intervenciones y acciones pedagógicas suman un total de {total_peas_pro}\
+ perfiles programados, de los cuales se ha contratado {total_peas_contr} ({ejec_otros}%). En el Anexo N° 2 se detalla, a nivel de perfiles CAS por intervenciones y acciones pedagógicas.", style='List Bullet')
+    interv_parrafo2.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY
+    
+    int_titulo = document.add_paragraph()
+    int_titulo.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    int_titulo_negrita = int_titulo.add_run("Gráfico N° 02. Avance en la contratación de plazas para intervenciones y acciones pedagógicas- Otras plazas(*)")
+    #int_titulo_negrita.style = document.styles['List Bullet']
+    #int_titulo_negrita.style = document.styles['List Bullet']
+    int_titulo_negrita.bold = True   
+    
+    paragraph = document.add_paragraph()
+    paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER 
+    run = paragraph.add_run("")
+    #run.add_picture('Gráfico_1.png', width=Inches(2))
+    path_grafico_vf=path_grafico / "Gráfico_2.png"
+    path_grafico_vf = path_grafico_vf.as_posix()
+    run.add_picture(path_grafico_vf, width=Inches(7.0), height=Inches(3.2))
+    
+    #Fuente:
+    interv_parrafo3 = document.add_paragraph(f"Fuente: Módulo CAS del Sistema Nexus al corte de {ndia_nexus} de {nmes_nex[nmes_nex_entero-1]} del 2023")
+    interv_parrafo3.style = fuente_stilo
+    interv_parrafo3.style.font.italic = True
+    #interv_parrafo3.style.font.size = docx.shared.Pt(9)
+    
+    #######################################################################################################################
+    # Anexo 1: Descripción de Intervenciones y acciones Pedagógicas, y costo total 
+    ########################################################################################################################
+    document.add_page_break()
+    document.add_heading("6. Anexos ", level=1) # 1) Intervenciones pedagógicas  
+    #document.add_heading(f"Corte: {fecha_corte_disponibilidad_format}", level=3)
+    
+    header=document.add_heading("ANEXO N° 1", level=2) # 1) Intervenciones pedagógicas  
+    header.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Creamos un estilo personalizado
+    #custom_style = document.styles.add_style('custom_style', docx.enum.style.WD_STYLE_TYPE.PARAGRAPH)
+    #custom_style.font.size = docx.shared.Pt(16)
+    #custom_style.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+        
+    # Creamos el párrafo con el estilo personalizado
+    #interv_parrafo2 = document.add_paragraph("Descripción de Intervenciones y acciones Pedagógicas, y costo total", style='custom_style')
+
+    # Tabla
+    int_titulo = document.add_paragraph()
+    int_titulo.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    int_titulo_negrita = int_titulo.add_run(f"Descripción de Intervenciones y acciones Pedagógicas, y costo total")
+    int_titulo_negrita.font.size = Pt(16)
+    #int_titulo_negrita.style = document.styles['List Bullet']
+    #int_titulo_negrita.style = document.styles['List Bullet']
+    int_titulo_negrita.bold = True    
+    tabla1_interv = document.add_table(tabla_intervenciones_formato_9.shape[0]+1, tabla_intervenciones_formato_9.shape[1])
+    tabla1_interv.autofit = False
+    tabla1_interv.allow_autofit = True
+    tabla1_interv.style = "tabla_minedu_1"
+    #tabla1_interv.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    tabla1_interv.alignment = WD_TABLE_ALIGNMENT.CENTER
+    
+    row = tabla1_interv.rows[0].cells
+    row[0].text = "Intervención Pedagógica"
+    row[1].text = "Descripción"
+    row[2].text = "PEAS Programadas 2023"
+    row[3].text = "Costo de la Intervención (S/)"
+    #row[4].text = "% Avance Contratación"
+    #row[5].text = "COSTO AL MES"
+    #row[4].text = "% DEV COSTO AL MES"
+    ## Contenido de la tabla
+    for i in range(tabla_intervenciones_formato_9.shape[0]):
+        for j in range(tabla_intervenciones_formato_9.shape[-1]):
+            tabla1_interv.cell(i+1,j).text = str(tabla_intervenciones_formato_9.values[i,j])  
+    
+    last_row = tabla1_interv.rows[-1]
+    first_cell = last_row.cells[0] # selecciona la primera celda de la última fila
+    second_cell = last_row.cells[1] # selecciona la segunda celda de la última fila
+    second_cell.text = second_cell.text.strip()
+
+    first_cell.merge(second_cell)
+    merged_cell = last_row.cells[0] # selecciona la celda combinada
+    #merged_cell.text = "Total"
+
+    for paragraph in merged_cell.paragraphs:
+        paragraph.alignment = 1
+
+    #Fuente:
+    interv_parrafo3 = document.add_paragraph(f"Nota: De los costos que se consignan en el Oficio Múltiple N° 00023-2023-MINEDU/SPE-OPEP. Se encuentra programado un 75 % en el PIA de los GORE, el MINEDU transferirá el resto de recursos, según ejecución.")
+    interv_parrafo3.style = fuente_stilo
+    interv_parrafo3.style.font.italic = True
+    #interv_parrafo3.style.font.size = docx.shared.Pt(9)
+    
+    #######################################################################################################################
+    # Anexo 2: Avance de contratación del Personal CAS de las intervenciones y acciones pedagogicas
+    ########################################################################################################################
+    document.add_page_break()
+    header=document.add_heading("ANEXO N° 2", level=2) # 1) Intervenciones pedagógicas  
+    header.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Creamos un estilo personalizado
+    #custom_style = document.styles.add_style('custom_style', docx.enum.style.WD_STYLE_TYPE.PARAGRAPH)
+    #custom_style.font.size = docx.shared.Pt(16)
+    #custom_style.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+        
+    # Creamos el párrafo con el estilo personalizado
+    #interv_parrafo2 = document.add_paragraph("Descripción de Intervenciones y acciones Pedagógicas, y costo total", style='custom_style')
+
+    # Tabla
+    int_titulo = document.add_paragraph()
+    int_titulo.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    int_titulo_negrita = int_titulo.add_run(f"Avance de contratación del Personal CAS de las intervenciones y acciones pedagógicas")
+    int_titulo_negrita.font.size = Pt(16)
+    #int_titulo_negrita.style = document.styles['List Bullet']
+    #int_titulo_negrita.style = document.styles['List Bullet']
+    int_titulo_negrita.bold = True    
+   
+    #Generamos un bucle para generar una tabla con el formato que queremos
+    
+    tabla1_interv = document.add_table(tabla_intervenciones_formato_9.shape[0]+1, tabla_intervenciones_formato_9.shape[1])
+    tabla1_interv.autofit = False
+    tabla1_interv.allow_autofit = True
+    tabla1_interv.style = "tabla_minedu_1"
+    #tabla1_interv.paragraph_format.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    tabla1_interv.alignment = WD_TABLE_ALIGNMENT.CENTER
+    
+    row = tabla1_interv.rows[0].cells
+    row[0].text = "Intervención Pedagógica"
+    row[1].text = "Descripción"
+    row[2].text = "PEAS Programadas 2023"
+    row[3].text = "Costo de la Intervención (S/)"
+    #row[4].text = "% Avance Contratación"
+    #row[5].text = "COSTO AL MES"
+    #row[4].text = "% DEV COSTO AL MES"
+    ## Contenido de la tabla
+    for i in range(tabla_intervenciones_formato_9.shape[0]):
+        for j in range(tabla_intervenciones_formato_9.shape[-1]):
+            tabla1_interv.cell(i+1,j).text = str(tabla_intervenciones_formato_9.values[i,j])  
+    
+    last_row = tabla1_interv.rows[-1]
+    first_cell = last_row.cells[0] # selecciona la primera celda de la última fila
+    second_cell = last_row.cells[1] # selecciona la segunda celda de la última fila
+    second_cell.text = second_cell.text.strip()
+
+    first_cell.merge(second_cell)
+    merged_cell = last_row.cells[0] # selecciona la celda combinada
+    #merged_cell.text = "Total"
+
+    for paragraph in merged_cell.paragraphs:
+        paragraph.alignment = 1
+
+    #Fuente:
+    interv_parrafo3 = document.add_paragraph(f"Nota: De los costos que se consignan en el Oficio Múltiple N° 00023-2023-MINEDU/SPE-OPEP. Se encuentra programado un 75 % en el PIA de los GORE, el MINEDU transferirá el resto de recursos, según ejecución.")
+    interv_parrafo3.style = fuente_stilo
+    interv_parrafo3.style.font.italic = True
+    #interv_parrafo3.style.font.size = docx.shared.Pt(9)
+    
     #######################
     # Guardamos documento #
     #######################
@@ -1802,10 +2461,11 @@ en base a los resultados de la ejecución de los recursos asignados, conforme lo
     fecha_siaf=fecha_corte_disponibilidad_format
     fecha_nexus=fecha_corte_nexus_format
     transf_materia=transf_materiales
+    transf_remunerativa=0 #Por ahora estoy considerando 0 soles
     
     context = {'mi_region': mi_region, 'mi_ejecutora': mi_ejecutora, 'cost_interven':cost_interven,
                'fecha_siaf':fecha_siaf, 'fecha_nexus':fecha_nexus, 'mi_imagen':InlineImage(doc, path_mapa, width=Cm(7.38), height=Cm(9.82)),
-               'transf_materia': transf_materia}
+               'transf_materia': transf_materia, 'tranf_remunerativas':transf_remunerativa}
     
     doc.render(context)
     doc.save(nueva_carpeta / f'AM_{region}_{fecha_actual}.docx')
